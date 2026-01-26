@@ -27,7 +27,7 @@ This repository provides two tools to clean up orphan Claude processes:
 
 ```bash
 # Download
-curl -O https://raw.githubusercontent.com/ArcadeYC/claude-code-cleanup/main/ccclean.sh
+curl -O https://raw.githubusercontent.com/YuancFeng/claude-code-cleanup/main/ccclean.sh
 chmod +x ccclean.sh
 
 # Run
@@ -83,7 +83,7 @@ Claude Code 和 Codex CLI 存在已知的内存泄漏问题。当你关闭会话
 
 ```bash
 # 下载
-curl -O https://raw.githubusercontent.com/ArcadeYC/claude-code-cleanup/main/ccclean.sh
+curl -O https://raw.githubusercontent.com/YuancFeng/claude-code-cleanup/main/ccclean.sh
 chmod +x ccclean.sh
 
 # 运行

@@ -10,9 +10,9 @@
 
 Claude Code, Codex CLI, and OpenCode have a known memory leak issue. When you close a session, orphan processes may continue running in the background, consuming memory (60-170MB each). This can accumulate to 30GB+ over time.
 
-**Related GitHub Issues:**
-- Claude Code: #19433, #20369, #11377, #4953, #18859
-- Codex CLI: #7932, #9345
+**Related discussions:**
+- Claude Code: [#4953](https://github.com/anthropics/claude-code/issues/4953), [#11377](https://github.com/anthropics/claude-code/issues/11377), [#18859](https://github.com/anthropics/claude-code/issues/18859), [#19433](https://github.com/anthropics/claude-code/issues/19433), [#20369](https://github.com/anthropics/claude-code/issues/20369)
+- Codex CLI: [#7932](https://github.com/openai/codex/issues/7932), [#9345](https://github.com/openai/codex/issues/9345)
 
 ### Solution
 
@@ -84,9 +84,9 @@ MIT
 
 Claude Code、Codex CLI 和 OpenCode 存在已知的内存泄漏问题。当你关闭会话时，孤儿进程可能继续在后台运行，每个占用 60-170MB 内存。长期累积可能达到 30GB+。
 
-**相关 GitHub Issues:**
-- Claude Code: #19433, #20369, #11377, #4953, #18859
-- Codex CLI: #7932, #9345
+**相关讨论：**
+- Claude Code: [#4953](https://github.com/anthropics/claude-code/issues/4953), [#11377](https://github.com/anthropics/claude-code/issues/11377), [#18859](https://github.com/anthropics/claude-code/issues/18859), [#19433](https://github.com/anthropics/claude-code/issues/19433), [#20369](https://github.com/anthropics/claude-code/issues/20369)
+- Codex CLI: [#7932](https://github.com/openai/codex/issues/7932), [#9345](https://github.com/openai/codex/issues/9345)
 
 ### 解决方案
 

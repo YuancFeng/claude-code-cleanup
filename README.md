@@ -21,11 +21,14 @@ This repository provides two tools to clean up orphan processes:
 1. **`ccclean.sh`** - Standalone bash script with interactive UI
 2. **`skill/SKILL.md`** - Claude Code agent skill for `/ccclean` command
 
-### Features (v5)
+### Features (v6)
 
 - **Multi-tool support**: Claude Code, Codex CLI, OpenCode
+- **MCP ecosystem cleanup**: Detect and clean orphan Playwright Chrome instances and MCP Node server processes (`npm exec @playwright/mcp`, `node playwright-mcp`, etc.)
+- **Smart Chrome protection**: Shared MCP Chrome instance stays alive if any Claude Code session is still active
+- **System health scan**: Report high-CPU (>50%) non-system processes running >10 minutes (report only, no auto-kill)
 - **Orphan zsh detection**: Detects orphan zsh spawned by `tail` and `shell-snapshot`
-- **Process type labels**: Shows `[CLAUDE]`, `[CODEX]`, `[OPENCODE]`, `[tail]`, `[zsh]` for each process
+- **Process type labels**: Shows `[claude]`, `[codex]`, `[opencode]`, `[tail]`, `[zsh]`, `[mcp-chrome]`, `[mcp-node]` for each process
 - **File cleanup**: Optional `--files` flag to clean up expired shell-snapshots and empty temp directories
 - **POSIX compatible**: Works with macOS default bash 3.2
 
@@ -66,11 +69,13 @@ Copy `skill/SKILL.md` to your Claude Code skills directory, then use `/ccclean` 
 
 ### Safety Features
 
-- **Precise matching**: Only kills processes related to Claude/Codex/OpenCode
+- **Precise matching**: Only kills processes related to Claude/Codex/OpenCode and their MCP ecosystem
+- **MCP Chrome shared instance protection**: Won't kill Chrome if any active session is connected
 - **PID reuse protection**: Verifies process start time + args + PPID before killing
 - **Runtime protection**: Skips processes running less than 5 minutes (configurable)
 - **Double confirmation**: Requires user confirmation before cleanup
 - **Graceful termination**: SIGTERM first, then SIGKILL
+- **System health scan**: Reports anomalous high-CPU processes without auto-killing
 
 ### License
 
@@ -95,11 +100,14 @@ Claude Code、Codex CLI 和 OpenCode 存在已知的内存泄漏问题。当你�
 1. **`ccclean.sh`** - 独立的 bash 脚本，带交互式界面
 2. **`skill/SKILL.md`** - Claude Code agent skill，支持 `/ccclean` 命令
 
-### 功能特性 (v5)
+### 功能特性 (v6)
 
 - **多工具支持**：Claude Code、Codex CLI、OpenCode
+- **MCP 生态清理**：检测并清理孤儿 Playwright Chrome 实例和 MCP Node 服务进程（`npm exec @playwright/mcp`、`node playwright-mcp` 等）
+- **智能 Chrome 保护**：共享的 MCP Chrome 实例在有任何活跃 Claude Code 会话时不会被清理
+- **系统健康扫描**：报告 CPU > 50% 且运行超过 10 分钟的非系统进程（仅报告，不自动清理）
 - **孤儿 zsh 检测**：检测由 `tail` 和 `shell-snapshot` 产生的孤儿 zsh 进程
-- **进程类型标识**：显示 `[CLAUDE]`、`[CODEX]`、`[OPENCODE]`、`[tail]`、`[zsh]` 标签
+- **进程类型标识**：显示 `[claude]`、`[codex]`、`[opencode]`、`[tail]`、`[zsh]`、`[mcp-chrome]`、`[mcp-node]` 标签
 - **文件清理**：可选 `--files` 参数清理过期的 shell-snapshots 和空临时目录
 - **POSIX 兼容**：支持 macOS 默认 bash 3.2
 
@@ -140,11 +148,13 @@ alias ccclean='curl -sL https://raw.githubusercontent.com/YuancFeng/claude-code-
 
 ### 安全特性
 
-- **精确匹配**：只清理 Claude/Codex/OpenCode 相关进程
+- **精确匹配**：只清理 Claude/Codex/OpenCode 及其 MCP 生态相关进程
+- **MCP Chrome 共享实例保护**：有活跃会话连接时不会清理 Chrome
 - **PID 复用保护**：清理前验证进程启动时间 + 参数 + PPID
 - **运行时长保护**：跳过运行少于 5 分钟的进程（可配置）
 - **双重确认**：清理前需要用户确认
 - **优雅终止**：先发送 SIGTERM，再发送 SIGKILL
+- **系统健康扫描**：报告异常高 CPU 进程，不自动清理
 
 ### 许可证
 

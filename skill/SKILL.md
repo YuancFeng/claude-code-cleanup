@@ -1,8 +1,8 @@
-# ccclean - Claude Code 进程清理工具
+# ccclean - Claude Code 进程清理工具 (v6)
 
 ---
 name: ccclean
-description: Claude Code 进程清理工具。清理孤儿进程、释放内存。触发词：ccclean、清理 Claude 进程、清理孤儿进程
+description: Claude Code 进程清理工具。清理孤儿进程（含 MCP 生态：Playwright Chrome、MCP Node Server）、系统异常 CPU 检测、释放内存。触发词：ccclean、清理 Claude 进程、清理孤儿进程、清理 MCP 进程
 ---
 
 ## 触发词
@@ -27,17 +27,30 @@ description: Claude Code 进程清理工具。清理孤儿进程、释放内存�
 
 ### 核心概念
 
-**孤儿进程识别**：
-- TTY=?? （无终端关联）
-- PPID=1 （父进程为 init/launchd，真正孤儿）
-- 进程年龄 >24 小时
+**孤儿进程识别**（7 类进程）：
+- claude / codex / opencode 主进程
+- tail -f /private/tmp/claude/... 进程
+- shell-snapshot zsh 进程
+- MCP Chrome 浏览器进程（Playwright 管理的 Chrome 实例）
+- MCP Node 进程（npm exec @playwright/mcp、node playwright-mcp 等）
+
+**MCP Chrome 安全判定**：
+- 所有 playwright-mcp 进程共享同一个 Chrome 实例
+- 只要有任何一个 playwright-mcp 进程还有活跃 TTY → Chrome 整体受保护
+- 只有所有关联进程都是 TTY=?? 时 → Chrome 才标记为孤儿可清理
+- CPU > 200% 且运行 > 30 分钟的 Chrome 会发出警告（不自动清理）
 
 **受保护进程**（永不清理）：
 - 有 TTY 关联的进程（ttysXXX）
 - 当前 shell 的祖先进程链
 - Claude 桌面应用的子进程
-- MCP 服务子进程
-- 运行时间 <1 小时的新进程
+- 有活跃会话的 MCP Chrome 实例
+- 运行时间 < 5 分钟的新进程
+
+**系统健康扫描**（仅报告不清理）：
+- 扫描 CPU > 50% 且运行 > 10 分钟的非系统进程
+- 排除白名单系统进程（WindowServer、kernel_task 等）
+- 针对已知问题进程（如 NotificationCenter）给出修复建议
 
 ---
 

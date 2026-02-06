@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# ccclean - Claude/Codex/OpenCode 孤儿进程清理工具 (安全增强版 v6)
-# 用法: ccclean [--files]
+# ccclean - Claude/Codex/OpenCode 孤儿进程清理工具 (安全增强版 v7)
+# 用法: ccclean [--files] [--fix [--yes]]
 #
 # 安全特性：
 # - 精确匹配：只清理相关进程（claude/codex/opencode/tail/shell-snapshot zsh/mcp-chrome/mcp-node）
 # - MCP 生态识别：Playwright Chrome、MCP Node Server、npm exec 进程
 # - MCP Chrome 安全保护：共享 Chrome 实例在有任何活跃 TTY 会话时不清理
 # - 系统健康扫描：检测 CPU > 50% 的异常非系统进程（仅报告不清理）
+# - 系统进程修复：--fix 模式可修复白名单中的高 CPU 系统进程（如 NotificationCenter）
 # - PID 复用保护：kill 前验证 lstart + args + PPID
 # - 运行时长保护：默认不清理运行少于 5 分钟的进程
 # - POSIX 兼容：支持 macOS 默认 bash 3.2
 # - 双重确认：选择后再次确认
 #
 # 选项：
-#   --files  同时清理过期的 shell-snapshots 和空临时目录
+#   --files   同时清理过期的 shell-snapshots 和空临时目录
+#   --no-fix  禁用系统进程修复（仅报告不修复）
+#   --yes     跳过修复前的交互确认（非交互模式）
 
 set -e
 
@@ -22,6 +25,21 @@ set -e
 # ============================================
 # 最小运行时长（秒），运行时间少于此值的进程将被保护
 MIN_RUNTIME_SECONDS=300  # 5分钟
+
+# 安全可修复的系统进程白名单（launchd 管理，kill 后自动重启）
+# 白名单条目 = 精确进程名常量，不允许动态值
+SAFE_FIX_WHITELIST=("NotificationCenter")
+
+# 固定系统命令路径（防命令注入）
+KILLALL="/usr/bin/killall"
+SLEEP="/bin/sleep"
+PS="/bin/ps"
+
+# --fix 模式参数
+FIX_CONFIRM_ROUNDS=2          # 需要连续检测 N 次仍超标才修复
+FIX_CONFIRM_INTERVAL=3        # 每次检测间隔（秒）
+FIX_COOLDOWN_FILE="/tmp/ccclean_fix_cooldown"
+FIX_COOLDOWN_SECONDS=300      # 5 分钟冷却
 
 # 分隔符（使用 ASCII Unit Separator，避免命令行参数冲突）
 SEP=$'\x1f'
@@ -39,6 +57,49 @@ BOLD='\033[1m'
 # ============================================
 # 辅助函数
 # ============================================
+
+# 精确匹配：检查进程名是否在修复白名单中
+# 数组遍历 + == 比较，不使用 grep/case 模糊匹配
+is_in_fix_whitelist() {
+    local name="$1"
+    for entry in "${SAFE_FIX_WHITELIST[@]}"; do
+        if [ "$name" = "$entry" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# 检查修复冷却时间（防重启风暴）
+check_fix_cooldown() {
+    if [ -f "$FIX_COOLDOWN_FILE" ]; then
+        local last_fix
+        last_fix=$(cat "$FIX_COOLDOWN_FILE")
+        local now
+        now=$(date +%s)
+        local elapsed=$((now - last_fix))
+        if [ "$elapsed" -lt "$FIX_COOLDOWN_SECONDS" ]; then
+            local remaining=$((FIX_COOLDOWN_SECONDS - elapsed))
+            echo -e "    ${YELLOW}⏳ 冷却中，${remaining}秒后可再次修复${NC}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# 连续检测确认 CPU 仍超标（防误修复）
+confirm_still_high_cpu() {
+    local proc_name="$1"
+    for i in $(seq 1 $FIX_CONFIRM_ROUNDS); do
+        $SLEEP $FIX_CONFIRM_INTERVAL
+        local current_cpu
+        current_cpu=$($PS -eo comm,%cpu | grep "^${proc_name} " | awk '{print $NF}' | cut -d. -f1)
+        if [ -z "$current_cpu" ] || [ "$current_cpu" -lt 50 ]; then
+            return 1  # CPU 已恢复，无需修复
+        fi
+    done
+    return 0  # 连续 N 次仍超标
+}
 
 # 将字符串转为小写（兼容 bash 3.2）
 to_lower() {
@@ -521,21 +582,63 @@ run_system_health_scan() {
             echo -e "  ${YELLOW}⚠ ${proc_comm}${NC} (PID ${proc_pid}) - CPU ${proc_cpu}% - 运行 ${readable_time}"
         fi
 
-        # 针对已知问题进程给出建议
-        case "$proc_comm" in
-            NotificationCenter)
-                echo -e "    ${BLUE}💡 建议: killall NotificationCenter (系统会自动重启)${NC}"
-                ;;
-            "Google Chrome Helper"*|"Chromium Helper"*)
-                echo -e "    ${BLUE}💡 建议: 检查浏览器标签页是否有异常占用${NC}"
-                ;;
-            node)
-                echo -e "    ${BLUE}💡 建议: 检查是否有挂起的 Node.js 进程: ${display_args}${NC}"
-                ;;
-            *)
-                echo -e "    ${BLUE}💡 进程命令: ${display_args}${NC}"
-                ;;
-        esac
+        # --fix 模式：尝试修复白名单中的高 CPU 系统进程
+        if [ "$FIX_SYSTEM" = true ] && is_in_fix_whitelist "$proc_comm"; then
+            # 1. 冷却检查
+            if ! check_fix_cooldown; then
+                continue
+            fi
+            # 2. 连续检测确认
+            echo -e "    ${BLUE}🔍 连续检测中（${FIX_CONFIRM_ROUNDS}次 × ${FIX_CONFIRM_INTERVAL}秒）...${NC}"
+            if ! confirm_still_high_cpu "$proc_comm"; then
+                echo -e "    ${GREEN}✅ CPU 已自行恢复，无需修复${NC}"
+                continue
+            fi
+            # 3. 交互确认（除非 --yes）
+            if [ "$FIX_YES" != true ]; then
+                echo -e "    ${YELLOW}⚠ 即将重启 ${proc_comm} (CPU ${proc_cpu}%)${NC}"
+                echo -e "    ${YELLOW}  副作用：未读通知将被清空${NC}"
+                read -p "    确认修复? (y/n): " fix_confirm
+                if [ "$fix_confirm" != "y" ] && [ "$fix_confirm" != "Y" ]; then
+                    echo -e "    ${YELLOW}已跳过${NC}"
+                    continue
+                fi
+            fi
+            # 4. 执行修复（固定路径 + 白名单常量，不使用动态变量）
+            for entry in "${SAFE_FIX_WHITELIST[@]}"; do
+                if [ "$proc_comm" = "$entry" ]; then
+                    $KILLALL -- "$entry" 2>/dev/null || true
+                    break
+                fi
+            done
+            $SLEEP 2
+            # 5. 验证
+            local new_cpu
+            new_cpu=$($PS -eo comm,%cpu | grep "^${proc_comm} " | awk '{print $NF}' | cut -d. -f1)
+            if [ -z "$new_cpu" ] || [ "$new_cpu" -lt 10 ]; then
+                echo -e "    ${GREEN}✅ 修复成功！CPU 已恢复正常${NC}"
+            else
+                echo -e "    ${RED}⚠ 修复后 CPU 仍为 ${new_cpu}%，可能需要进一步排查${NC}"
+            fi
+            # 6. 记录冷却时间
+            date +%s > "$FIX_COOLDOWN_FILE"
+        else
+            # 非 --fix 模式或不在白名单中：给出建议
+            case "$proc_comm" in
+                NotificationCenter)
+                    echo -e "    ${BLUE}💡 建议: ccclean --fix 自动修复，或手动 killall NotificationCenter${NC}"
+                    ;;
+                "Google Chrome Helper"*|"Chromium Helper"*)
+                    echo -e "    ${BLUE}💡 建议: 检查浏览器标签页是否有异常占用${NC}"
+                    ;;
+                node)
+                    echo -e "    ${BLUE}💡 建议: 检查是否有挂起的 Node.js 进程${NC}"
+                    ;;
+                *)
+                    echo -e "    ${BLUE}💡 进程: ${proc_comm} (PID ${proc_pid})${NC}"
+                    ;;
+            esac
+        fi
 
     done < <(ps -eo pid,%cpu,etime,command | awk 'NR>1 && $2+0 > 50 {print}')
 
@@ -543,22 +646,28 @@ run_system_health_scan() {
         echo -e "${GREEN}✅ 系统健康，没有发现异常高 CPU 进程${NC}"
     else
         echo ""
-        echo -e "${YELLOW}以上进程 CPU 占用异常偏高，仅供参考，不会自动清理${NC}"
+        if [ "$FIX_SYSTEM" = true ]; then
+            echo -e "${YELLOW}以上为系统健康扫描结果，白名单进程已尝试修复${NC}"
+        else
+            echo -e "${YELLOW}以上进程 CPU 占用异常偏高，可使用 ccclean --fix 修复白名单进程${NC}"
+        fi
     fi
 }
 
 # 解析参数
 CLEAN_FILES=false
+FIX_SYSTEM=true
+FIX_YES=false
 for arg in "$@"; do
     case "$arg" in
-        --files)
-            CLEAN_FILES=true
-            ;;
+        --files)  CLEAN_FILES=true ;;
+        --no-fix) FIX_SYSTEM=false ;;
+        --yes)    FIX_YES=true ;;
     esac
 done
 
 echo -e "${CYAN}${BOLD}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}${BOLD}║   Claude/Codex/OpenCode 孤儿进程清理工具 (v6)  ║${NC}"
+echo -e "${CYAN}${BOLD}║   Claude/Codex/OpenCode 孤儿进程清理工具 (v7)  ║${NC}"
 echo -e "${CYAN}${BOLD}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
